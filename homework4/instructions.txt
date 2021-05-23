@@ -1,0 +1,16 @@
+Implement Support Vector Regression (SVR) and two kernels:
+
+    Polynomial kernel κ(x,x′)=(1+xx′)M
+    RBF kernel κ(x,x′)=exp(−||x−x′||22σ2)
+
+Implement SVR by solving the optimization problem in Eq. (10) from (Smola and Scholkopf, 2004) with cvxopt.solvers.qp. Inputs to qp should be represented so that the solution x contains αi and α∗i in the following order: [α1,α∗1,α2,α∗2,α3,α∗3,…]. Set C as 1/λ.
+
+Hint. Computation of b needs to support kernels, so use ∑lj=1(αj−α∗j)⟨xj,xi⟩ instead of ⟨w,xi⟩. Also, results from qp are approximate; take care to handle this. Then, Eq. (16) from (Smola and Scholkopf, 2004) is probably wrong. In the min part there, I think, should be +ϵ instead of −ϵ.
+
+Hint. For the large majority of cases, the inequalities of Eq. (16) should collapse (up to some small error) in a correct solution. They are only problematic when there is some optimization artifact in qr (like having a very small lambda, which causes large C). For these rare cases perhaps take the mean of the limits.
+
+Apply SVR and both kernels to the 1-dimensional sine data set. For each kernel, find epsilon, kernel and regularization parameters that work well. Take care to choose such epsilon that the solution is sparse. Plot the input data, the fit, and mark support vectors on the plot.
+
+Apply SVR and both kernels to the housing2r data set. Use the first 80% of data as a training set and the remaining 20% as a validation set. For each kernel, plot RMSE on the testing set versus a kernel parameter value (for polynomial kernel, M ∈ [1,10], for RBF choose interesting values of σ yourself). Take care to set ϵ properly. Plot two curves for each kernel, one with regularization parameter λ=1, and the other with λ set with internal cross validation (for each kernel parameter value separately). For each score also display the number of support vectors and try to keep it to a minimum while still getting a good fit.
+
+Compare your results with the ones from the previous homework and comment on the differences and similarities. Which learning algorithm would you prefer and why?

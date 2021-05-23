@@ -1,0 +1,644 @@
+---
+title: "Loss estimation homework"
+author: "Žiga Trojer"
+date: "7/5/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(ggplot2)
+library(patchwork)
+library(reshape2)
+```
+
+```{r generate, echo=FALSE}
+
+toy_data <- function(n, seed = NULL) {
+  set.seed(seed)
+  x <- matrix(rnorm(8 * n), ncol = 8)
+  z <- 0.4 * x[,1] - 0.5 * x[,2] + 1.75 * x[,3] - 0.2 * x[,4] + x[,5]
+  y <- runif(n) > 1 / (1 + exp(-z))
+  return (data.frame(x = x, y = y))
+}
+
+log_loss <- function(y, p) {
+  -(y * log(p) + (1 - y) * log(1 - p))
+}
+
+standard_error <- function(x) {
+  return (sd(x) / sqrt(length(x)))
+}
+
+confidence_interval <- function(x, sd_error) {
+  mean_val <- mean(x)
+  lower_bound <- mean_val - 2 * sd_error
+  upper_bound <- mean_val + 2 * sd_error
+  bounds <- list(lower_bound, upper_bound)
+  return (bounds)
+}
+
+cross_validation2 <- function(folds, seedn) {
+  # set seed
+  set.seed(seedn)
+  # shuffle data set
+  shuffle_index <- sample(nrow(toy_100))
+  
+  toy_100_shuffle <- toy_100[shuffle_index,]
+  # set indexes for folds
+  n_folds <- cut(seq(1, nrow(toy_100)), breaks=folds, labels=FALSE)
+  # set empty vectors
+  log_loss_vec <- c()
+  
+  position_log_loss <- rep(Inf, 100)
+  # iteration over folds
+  for(i in 1:folds){
+    # get indexes of test data
+    rnd_idx <- which(n_folds==i, arr.ind=TRUE)
+    # define train data as everything that is not test
+    toy_train <- toy_100_shuffle[-rnd_idx, ]
+    # define test data
+    toy_test <- toy_100_shuffle[rnd_idx, ]
+    # train model on train
+    h <- glm(y ~ ., family = binomial(link='logit'), data = toy_train)
+    # make predictions on test
+    predictions <- predict(h, newdata = toy_test[, -9], type = 'response')
+    # calculate log loss
+    log_loss_val <- log_loss(toy_test$y, predictions)
+    
+    test_risk <- mean(log_loss_val)
+    
+    log_loss_vec <- c(log_loss_vec, test_risk)
+    
+    shuff_idx <- shuffle_index[rnd_idx]
+    
+    position_log_loss[shuff_idx] <- log_loss_val
+
+  }
+  return (list(log_loss_vec, test_risk, position_log_loss))
+}
+
+```
+
+## A proxy for true risk
+
+
+we will be using huge generated data set as a proxy for the DGP and determining the ground-truth true risk of our models. First, we generate our data set with 100,000 data points.
+
+```{r}
+df_dgp <- toy_data(100000, 0)
+```
+
+Then we can check that a model's risk on this data set differs from it's true risk at most on the 3rd decimal digit. Let's have a general model that gives probabilities uniformly on [0,1]. Let's generate 100,000 such probabilities and let us estimate the error (using logistic regression learner)
+
+```{r}
+set.seed(1)
+p <- runif(100000)
+log_l <- log_loss(df_dgp$y, p)
+el <- mean(log_l)
+tre <- sd(log_l) / sqrt(100000)
+print(paste0("Expected loss: ", round(el, 4)))
+print(paste0("Estimated error: ", round(tre, 4)))
+```
+
+We calculated expected loss with Monte Carlo integration and estimated the error, which is approximately 0.003. This means that the the model's risk on this data differs from it's true risk at most on the 3rd decimal digit.
+
+## Holdout estimation
+
+Holdout estimation is the most common approach to estimating model's risk. Model's risk on the test data is just an estimate of the model's true risk and that's why we always need to report quantification of uncertainty, such as standard errors or 95% confidence intervals. We will investigate the sources of variability and bias that contribute to the difference between the test data risk estimate and the true risk of a model trained on the training data. 
+
+We will use Logistic Regression throughout the homework, so we will first demonstrate the process of fitting and predicting, as it is largely repeated over the next sections. Also, we will calculate true risk proxy of a model. First, we generate our train toy data set with 50 observations
+
+```{r}
+toy_50 <- toy_data(50, 0)
+```
+
+We are using Bernoulli-logit GLM - training model *h* using previously defined train data
+
+```{r}
+h <- glm(y ~ ., family = binomial(link='logit'), data = toy_50)
+```
+
+Computing the true risk proxy for *h* using the huge data set $df\_dgp$
+
+```{r}
+predictions <- predict(h, newdata = df_dgp[, -9], type = 'response')
+rsk <- mean(log_loss(df_dgp$y, predictions))
+print(paste0("True risk proxy: ", round(rsk, 4)))
+```
+
+
+```{r, echo=FALSE,  warning = FALSE}
+true_risk <- mean(log_loss(df_dgp$y, predictions))
+
+risks_vec <- c()
+standard_errors_vec <- c()
+contains_true_risk_vec <- c()
+
+for (i in c(1:1000))
+{
+  toy_50_n <- toy_data(50, i ** 2)
+  
+  predictions_n <- predict(h, newdata = toy_50_n[, -9], type = 'response')
+  
+  log_loss_val <- log_loss(toy_50_n$y, predictions_n)
+  
+  risk <- mean(log_loss_val)
+  
+  SE <- standard_error(log_loss_val)
+  
+  CI <- confidence_interval(log_loss_val, SE)
+  
+  contains_true_risk <- (CI[1] <= true_risk & CI[2] >= true_risk)
+  
+  risks_vec <- c(risks_vec, risk)
+  
+  standard_errors_vec <- c(standard_errors_vec, SE)
+  
+  contains_true_risk_vec <- c(contains_true_risk_vec, contains_true_risk)
+}
+```
+
+The following plot shows differences differences between the estimates and the true risk proxy
+
+```{r pressure, , fig.width=2, fig.height=3, echo=FALSE,  warning = FALSE}
+#plot(density(risks_vec - true_risk), main="", xlab= "estimation risk - true risk", ylab="Density", panel.first=grid())
+diff <- risks_vec - true_risk
+plt_data <- as.data.frame(diff)
+p <- ggplot(plt_data, aes(x=diff)) + geom_density() + xlim(-0.25, 0.5) + ylim(0, 4)
+p + labs(x ="estimation risk - true risk") + ggtitle("Density of diff. 
+between holdout 
+estimates and the 
+true risk proxy") 
+```
+We also computed true risk proxy, average difference between the estimate and the true risk, true risk of 0.5-0.5 predictions, median standard error and percentage of 95CI that contains the true risk proxy:
+
+
+```{r, echo=FALSE}
+print(paste0("True risk proxy: ", round(true_risk, 4)))
+print(paste0("Mean difference: ", round(mean(risks_vec - true_risk), 4)))
+print(paste0("0.5-0.5 baseline true risk: ", round(mean(log_loss(df_dgp$y, 0.5)), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec), 4)))
+print(paste0("Percentage of 95CI that contain the true risk proxy: ", mean(contains_true_risk_vec) * 100))
+```
+
+First think we notice from the graph is that the mode is a bit to the left. Shape is asymmetric - a bit longer tails on the right side. First we could think that holdout estimation is biased, but because the distribution is skewed, this is not the case (mean difference around zero). Here we are using independent test set (as we are generating a new toy data set with 50 observations), so this also tells us the holdout estimation is unbiased, as we are estimating loss on completely independent set. Also, holdout estimation is consistent (by the law of large number). Because of these two good properties, we should always use holdout estimation with the independent test set, if we have enough data. 
+
+Let us return to the longer tails on the positives. We think that this has to do something about the nature of log-loss function. It punishes mistakes more than it rewards good things (because logarithm diverges close to 0). From the longer tails we can also see that sometimes a bad model is picked before the good model, because sometimes it may happen that the generated test data is exactly such that the good model will fail on it. We see that 93.4 % of the times, true risk is in the 95CI - it underestimates the uncertainty of the estimator.
+
+If we would have larger training set, the true risk proxy and the variance of estimator would decrease. True risk proxy decreases due the fact we better understand DGP with more data. Both would increase when having smaller training set (having the same size of a test set).
+
+In general, if we would increase the size of a test set, bias would increase, but in our case, holdout estimation is unbiased, so there would be no effect on bias (also when decreasing the size of a test set). But increasing the test data at the expense of training size, we decrease the 'capability' of a model to learn. The difference between the estimate and the true risk would decrease, as our estimate would be better. 
+
+## Overestimation of the deployed model's risk
+
+We rarely deploy the model trained only on the training data. Similarly, we never deploy any of the $k$ models that are learned during $k$-fold cross-validation. Instead, we use the estimation as a means to select the best learner and then deploy the model trained on more data, typically all the available data. If a model is "smart", it means that with more data, it does not get worse in terms of performance.
+
+```{r, echo=FALSE, warning = FALSE}
+
+true_risk_h1 <- c()
+true_risk_h2 <- c()
+
+for (i in c(1:50))
+{
+  # generate two data sets, each with 50 observations
+  toy_50 <- toy_data(50, i ** 2)
+  
+  toy_50_2 <- toy_data(50, 2500 + i ** 2)
+  
+  toy_100 <- rbind(toy_50, toy_50_2)
+  
+  # train both models, first only with 50 observations
+  h1 <- glm(y ~ ., family = binomial(link='logit'), data = toy_50)
+  # second with 100 observations, where 50 observations from before
+  h2 <- glm(y ~ ., family = binomial(link='logit'), data = toy_100)
+  
+  predictions_50 <- predict(h1, newdata = df_dgp[, -9], type = 'response')
+  
+  predictions_100 <- predict(h2, newdata = df_dgp[, -9], type = 'response')
+  
+  true_risk_50 <- mean(log_loss(df_dgp$y, predictions_50))
+  
+  true_risk_100 <- mean(log_loss(df_dgp$y, predictions_100))
+  
+  true_risk_h1 <- c(true_risk_h1, true_risk_50)
+  
+  true_risk_h2 <- c(true_risk_h2, true_risk_100)
+}
+```
+
+We generated two data sets with 50 observations and trained first model $h_1$ on the first data set with 50 observations and model $h_2$ with combined data sets 1 and 2, so we end up model trained on 100 observations. We also calculated the true risk proxies for $h_1$ and $h_2$ and repeated this procedure 50 times. Here is the summary of the differences between the true risk proxies of $h_1$ and $h_2$:
+
+```{r, echo=FALSE}
+print(paste0("Summary of true risk h1 - true risk h2: "))
+summary(true_risk_h1 - true_risk_h2)
+```
+
+Because we trained model $h_1$ on a smaller set, true risk proxy for this model is higher than for $h_2$, which is trained using data set twice bigger. This is nicely seen from the summary above, where the mean average of differences is around 0.65. We also observe that the maximum difference is high (around 8.6) and minimum difference is almost zero. The estimation of the first model's risk has a lot of variance, compared to the variance of the second's model risk estimation. This nicely demonstrates that with more data, variance decreases and performance is better. Because the minimum is negative, we can conclude that it could happen that we get better estimation of model's risk with less data.
+
+When choosing between two train data sets with different sizes, we should always take the larger one, as our variance will be lower. As we demonstrated on the case above, having the same train set size, picking larger train set makes sense and should be done always (at least when we have a "smart" model). If we would increase the difference between sizes of those sets, differences between performances would be even more visible, as the model trained on a bigger data set would outperform the one, trained on a smaller data set. It would be interesting to see the performance differences, when having two very small data set (for example, one with 10 data points and other with 15 data points). We think that for both estimations, the variance would be too big to see any differences between those two.
+
+## Loss estimator variability due to split variability
+
+In practical application of train-test splitting, we would choose a train-test split proportion, train on the training data, and test on the test data. This results we then use on the test data as an estimate of the true risk of the model trained on all data. The estimates will be biased, because the tested model is trained on less data than the model we are interested in. Also, it would have variance due to which observations ended up in the training set and which in the test set. We can add another source of the variability - the variability of the losses across observations.
+
+```{r, echo=FALSE, warning = FALSE}
+
+toy_100 <- toy_data(100, 0)
+
+h0 <- glm(y ~ ., family = binomial(link='logit'), data = toy_100)
+
+predictions_100 <- predict(h0, newdata = df_dgp[, -9], type = 'response')
+
+true_risk_100 <- mean(log_loss(df_dgp$y, predictions_100))
+
+risks_vec <- c()
+standard_errors_vec <- c()
+contains_true_risk_vec <- c()
+average_diff <- c()
+
+for (i in c(1:1000))
+{
+  set.seed(i ** 2)
+  
+  rnd_idx <- sample(c(1:100), 50)
+  
+  toy_train <- toy_100[rnd_idx, ]
+  
+  toy_test <- toy_100[-rnd_idx, ]
+  
+  h <- glm(y ~ ., family = binomial(link='logit'), data = toy_train)
+  
+  predictions <- predict(h, newdata = toy_test[, -9], type = 'response')
+  
+  log_loss_val <- log_loss(toy_test$y, predictions)
+  
+  test_risk <- mean(log_loss_val)
+  
+  SE <- standard_error(log_loss_val)
+  
+  CI <- confidence_interval(log_loss_val, SE)
+  
+  contains_true_risk <- (CI[1] <= true_risk_100 & CI[2] >= true_risk_100)
+  
+  risks_vec <- c(risks_vec, test_risk)
+  
+  standard_errors_vec <- c(standard_errors_vec, SE)
+  
+  contains_true_risk_vec <- c(contains_true_risk_vec, contains_true_risk)
+  
+  average_diff <- c(average_diff, mean(test_risk - true_risk_100))
+}
+```
+
+```{r second, fig.width=2, fig.height=3, echo=FALSE, warning = FALSE}
+#plot(density(risks_vec - true_risk), xlim=c(-0.25,1.5),  main="", xlab= "estimation risk - true risk", ylab="Density", panel.first=grid())
+
+diff <- risks_vec - true_risk_100
+plt_data <- as.data.frame(diff)
+p <- ggplot(plt_data, aes(x=diff)) + geom_density() + xlim(-0.25, 1.5) + ylim(0, 4)
+p + labs(x ="estimation risk - true risk") + ggtitle("Density of diff. 
+between estimates 
+and the true 
+risk proxy") 
+```
+```{r, echo=FALSE}
+print(paste0("True risk proxy: ", round(true_risk_100, 4)))
+print(paste0("Mean difference: ", round(mean(average_diff), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec), 4)))
+print(paste0("Percentage of 95CI that contain the true risk proxy: ", round(mean(contains_true_risk_vec) * 100, 1)))
+```
+
+
+
+First thing we notice is that the distribution of differences is very skewed - very long tail on the positive and the mode is slightly on the positive side, which means that our model underestimates the performance, or overestimates the error. This could be also seen from the 95CI, as it contains true risk proxy 86.2 %. In some cases, the estimation of an error is really high, which is seen from long tails. We have already discussed longer tails on the right side before, where we said that this could mean that the best models could perform bad on some test cases. Also, the estimation of a risk is positively biased.
+
+If we would have more data, the estimations would have lower bias and lower true risk proxy. Also, the variance of estimator would decrease. By increasing the proportion of train set, the bias would decrease and the variance would increase and vice versa. Increasing the proportion of a test set, the bias would increase, as we would not be able to fit the model properly. We should always consider taking such proportion that the size of train/test set would not be too low, as having small sets is not good practice - having small train set, the model can not learn properly and having too small test set, our estimations of a risk are very uncertain.
+
+## Cross-validation
+
+The cross-validation estimates of true risk will be biased and will contain a lot of variability if the data set is relatively small. This variability will be both due to training set and due to test set variability of the inherent variability of the losses. 
+
+```{r, echo=FALSE, warning = FALSE}
+
+
+risk_vec_2 <- c()
+standard_errors_vec_2 <- c()
+contains_true_risk_vec_2 <- c()
+average_diff_2 <- c()
+
+risk_vec_leave_one_out <- c()
+standard_errors_vec_leave_one_out <- c()
+contains_true_risk_vec_leave_one_out <- c()
+average_diff_leave_one_out <- c()
+
+risk_vec_10 <- c()
+standard_errors_vec_10 <- c()
+contains_true_risk_vec_10 <- c()
+average_diff_10 <- c()
+
+risk_vec_4 <- c()
+standard_errors_vec_4 <- c()
+contains_true_risk_vec_4 <- c()
+average_diff_4 <- c()
+
+risk_vec_20 <- c()
+standard_errors_vec_20 <- c()
+contains_true_risk_vec_20 <- c()
+average_diff_20 <- c()
+
+for (k in 1:500) {
+  
+  toy_100 <- toy_data(100, k ** 2 )
+  h0 <- glm(y ~ ., family = binomial(link='logit'), data = toy_100)
+  predictions_100 <- predict(h0, newdata = df_dgp[, -9], type = 'response')
+  true_risk_100 <- mean(log_loss(df_dgp$y, predictions_100))
+  
+  #leave-one-out cross validation
+  CV <- cross_validation2(100, 500 + k ** 2)
+  risk <- mean(CV[[1]])
+  risk_vec_leave_one_out <- c(risk_vec_leave_one_out, risk)
+  SE <- standard_error(CV[[1]])
+  standard_errors_vec_leave_one_out <- c(standard_errors_vec_leave_one_out, SE)
+  lower_bound <- risk - 2 * SE
+  upper_bound <- risk + 2 * SE
+  contains_true_risk <- (lower_bound <= true_risk_100 & upper_bound >= true_risk_100)
+  contains_true_risk_vec_leave_one_out <- c(contains_true_risk_vec_leave_one_out, contains_true_risk)
+  average_diff_leave_one_out <- c(average_diff_leave_one_out, mean(CV[[1]] - true_risk_100 ))
+  
+  # 2-fold cross validation
+  CV <- cross_validation2(2, 500 + k ** 2)
+  risk <- mean(CV[[2]])
+  risk_vec_2 <- c(risk_vec_2, risk)
+  SE <- standard_error(CV[[1]])
+  standard_errors_vec_2 <- c(standard_errors_vec_2, SE)
+  CI <- confidence_interval(CV[[1]], SE)
+  contains_true_risk <- (CI[[1]] <= true_risk_100 & CI[[2]] >= true_risk_100)
+  contains_true_risk_vec_2 <- c(contains_true_risk_vec_2, contains_true_risk)
+  average_diff_2 <- c(average_diff_2, mean(CV[[1]] - true_risk_100))
+  
+  # 4-fold cross validation
+  CV <- cross_validation2(4, 500 + k ** 2)
+  risk <- mean(CV[[2]])
+  risk_vec_4 <- c(risk_vec_4, risk)
+  SE <- standard_error(CV[[1]])
+  standard_errors_vec_4 <- c(standard_errors_vec_4, SE)
+  CI <- confidence_interval(CV[[1]], SE)
+  contains_true_risk <- (CI[[1]] <= true_risk_100 & CI[[2]] >= true_risk_100)
+  contains_true_risk_vec_4 <- c(contains_true_risk_vec_4, contains_true_risk)
+  average_diff_4 <- c(average_diff_4, mean(CV[[1]] - true_risk_100))
+
+  
+  # 10-fold cross validation
+  CV <- cross_validation2(10, 500 + k ** 2)
+  risk <- mean(CV[[2]])
+  risk_vec_10 <- c(risk_vec_10, risk)
+  SE <- standard_error(CV[[1]])
+  standard_errors_vec_10 <- c(standard_errors_vec_10, SE)
+  CI <- confidence_interval(CV[[1]], SE)
+  contains_true_risk <- (CI[[1]] <= true_risk_100 & CI[[2]] >= true_risk_100)
+  contains_true_risk_vec_10 <- c(contains_true_risk_vec_10, contains_true_risk)
+  average_diff_10 <- c(average_diff_10, mean(CV[[1]] - true_risk_100))
+
+ # 10-fold cross validation for 20 different partitions
+  average_log_loss <- rep(0, 100)
+  
+   for (k in 1:20) 
+   {
+     CV <- cross_validation2(10, 500 + k ** 2)
+     log_losses <- CV[[3]]
+     average_log_loss <- average_log_loss + log_losses
+   }
+  average_log_loss <- average_log_loss / 20
+  
+  risk <- mean(average_log_loss)
+  risk_vec_20 <- c(risk_vec_20, risk)
+  SE <- standard_error(average_log_loss)
+  standard_errors_vec_20 <- c(standard_errors_vec_20, SE)
+  CI <- confidence_interval(average_log_loss, SE)
+  contains_true_risk <- (CI[[1]] <= true_risk_100 & CI[[2]] >= true_risk_100)
+  contains_true_risk_vec_20 <- c(contains_true_risk_vec_20, contains_true_risk)
+  average_diff_20 <- c(average_diff_20, mean(average_log_loss - true_risk_100))
+}
+
+
+plt_data_2 <- as.data.frame(average_diff_2)
+#p1 <- ggplot(plt_data_2, aes(x=average_diff_2)) + geom_density() + xlim(-0.5, 1.5)+ ylim(0, 6)
+#p1 + labs(x ="estimation risk - true risk", title = '2-fold')
+plt_data_4 <- as.data.frame(average_diff_4)
+#p2 <- ggplot(plt_data_4, aes(x=average_diff_4)) + geom_density() + xlim(-0.5, 1.5)+ ylim(0, 6)
+#p2 + labs(x ="estimation risk - true risk", title = '4-fold')
+plt_data_10 <- as.data.frame(average_diff_10)
+#p3 <- ggplot(plt_data_10, aes(x=average_diff_10)) + geom_density() + xlim(-0.5, 1.5)+ ylim(0, 6)
+#p3 + labs(x ="estimation risk - true risk", title = '10-fold')
+plt_data_leave_one_out <- as.data.frame(average_diff_leave_one_out)
+#p4 <- ggplot(plt_data_leave_one_out, aes(x=average_diff_leave_one_out)) + geom_density() + xlim(-0.5, 1.5) + ylim(0, 6)
+#p4 + labs(x ="estimation risk - true risk", title = 'leave-one-out')
+plt_data_20 <- as.data.frame(average_diff_20)
+#p5 <- ggplot(plt_data_20, aes(x=average_diff_20)) + geom_density() + xlim(-0.5, 1.5) + ylim(0, 6)
+#p5 + labs(title = '10-fold-20-rep', x ="estimation risk - true risk")
+
+plot_data <- cbind(plt_data_2, plt_data_4, plt_data_10, plt_data_leave_one_out, plt_data_20)
+plot_data <- melt(plot_data, id.vars = NULL)
+levels(plot_data$variable) <- c("2-fold", "4-fold", "10-fold", "leave-one-out", "10-fold-20-rep")
+```
+
+
+```{r, echo=FALSE, warning = FALSE}
+print("2-fold")
+print(paste0("Mean difference: ", round(mean(average_diff_2), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec_2), 4)))
+print(paste0("Percentage of 95CI that contain the true risk proxy: ", round(mean(contains_true_risk_vec_2) * 100, 1)))
+print("4-fold")
+print(paste0("Mean difference: ", round(mean(average_diff_4), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec_4), 4)))
+print(paste0("Percentage of 95CI that contain the true risk proxy: ", round(mean(contains_true_risk_vec_4) * 100, 1)))
+print("10-fold")
+print(paste0("Mean difference: ", round(mean(average_diff_10), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec_10), 4)))
+print(paste0("Percentage of 95CI that contain the true risk proxy: ", round(mean(contains_true_risk_vec_10) * 100, 1)))
+print("leave-one-out")
+print(paste0("Mean difference: ", round(mean(average_diff_leave_one_out), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec_leave_one_out), 4)))
+print(paste0("Percentage of 95CI that contain the true risk proxy: ", round(mean(contains_true_risk_vec_leave_one_out) * 100, 1)))
+print("10-fold-20-rep")
+print(paste0("Mean difference: ", round(mean(average_diff_20), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec_20), 4)))
+print(paste0("Percentage of 95CI that contain the true risk proxy: ", round(mean(contains_true_risk_vec_20) * 100, 1)))
+```
+
+```{r third, fig.width=5, fig.height=4, echo=FALSE}
+ggplot(plot_data, aes(value)) + geom_density() + facet_wrap(~variable) + xlim(-0.5, 1.5) + labs(x ="estimation risk - true risk")
+```
+
+
+The first thing we observe is that the estimation of a risk highly depends on number of folds. More folds we have, better the estimation of a risk - observing 2-fold cross-validation, we can see high average difference between estimates and the true risk proxy. Increasing number of folds, this difference is lowering and the get lowest difference with the leave-one-out cross-validation, which makes sense. We should always consider more splits, but we should be careful not to choose too many folds, as the computation time of a cross-validation increases a lot! The variance also decreases with the number of folds, but we can see that the variance of a 10-fold CV is lower than the variance of a leave-one-out. The most time consuming CV was the 10-fold-20-rep CV and this gives good results in terms of a percentage of 95CI that contains the true risk proxy the most times. 
+
+We can also observe that mean differences for all CV are positive - we are overestimating the error, or underestimating the model's performance. Also, it is interesting that the difference of the estimated risk and true risk for  2-fold CV is high. We think that this is due to problems of fitting the model, as we got several warnings for the learning algorithm not converging.
+
+Comparing distributions of differences we observe that the 2-fold CV has heavier tails and the standard deviation is higher, compared to all others. For other folds, the distributions of differences are similar.
+
+## A different scenario
+
+We can choose another DGP/learners such that the results will disagree with our last example. We hope that in such a way, the variance would increase with the increase of folds or maybe we even get more extreme cases. We will be dealing with DGP which gives only one variable and we will be using Poisson regression.
+
+```{r, echo=FALSE, warning = FALSE}
+new_data <- function(n, seed = NULL) {
+  set.seed(seed)
+  x <- matrix(rnorm(8 * n), ncol = 1)
+  #b <- 1 / x ** 2
+  a <- 1 / x
+  #x <- cbind(x, b)
+  y <- runif(n) > 1 / (1 + exp(-a))
+  return (data.frame(x = x, y = y))
+}
+```
+
+
+```{r, echo=FALSE, warning = FALSE}
+df_dgp2 <- new_data(10000, 0)
+
+risk_vec_2 <- c()
+standard_errors_vec_2 <- c()
+contains_true_risk_vec_2 <- c()
+average_diff_2 <- c()
+
+risk_vec_leave_one_out <- c()
+standard_errors_vec_leave_one_out <- c()
+contains_true_risk_vec_leave_one_out <- c()
+average_diff_leave_one_out <- c()
+
+risk_vec_10 <- c()
+standard_errors_vec_10 <- c()
+contains_true_risk_vec_10 <- c()
+average_diff_10 <- c()
+
+risk_vec_4 <- c()
+standard_errors_vec_4 <- c()
+contains_true_risk_vec_4 <- c()
+average_diff_4 <- c()
+
+risk_vec_20 <- c()
+standard_errors_vec_20 <- c()
+contains_true_risk_vec_20 <- c()
+average_diff_20 <- c()
+
+for (k in 1:50) {
+  
+  toy_100 <- new_data(100, k ** 2)
+  h0 <- glm(y ~ ., family = poisson(link = "log"), data = toy_100)
+  predictions_100 <- predict(h0, newdata = df_dgp2[, -3], type = 'response')
+  true_risk_100 <- mean(na.omit(log_loss(df_dgp2$y, predictions_100)))
+  #leave-one-out cross validation
+  CV <- cross_validation2(100, 500 + k ** 2)
+  risk <- mean(CV[[1]])
+  risk_vec_leave_one_out <- c(risk_vec_leave_one_out, risk)
+  SE <- standard_error(CV[[1]])
+  standard_errors_vec_leave_one_out <- c(standard_errors_vec_leave_one_out, SE)
+  lower_bound <- risk - 2 * SE
+  upper_bound <- risk + 2 * SE
+  contains_true_risk <- (lower_bound <= true_risk_100 & upper_bound >= true_risk_100)
+  contains_true_risk_vec_leave_one_out <- c(contains_true_risk_vec_leave_one_out, contains_true_risk)
+  average_diff_leave_one_out <- c(average_diff_leave_one_out, mean(CV[[1]] - true_risk_100 ))
+  
+  # 2-fold cross validation
+  CV <- cross_validation2(2, 500 + k ** 2)
+  risk <- mean(CV[[2]])
+  risk_vec_2 <- c(risk_vec_2, risk)
+  SE <- standard_error(CV[[1]])
+  standard_errors_vec_2 <- c(standard_errors_vec_2, SE)
+  CI <- confidence_interval(CV[[1]], SE)
+  contains_true_risk <- (CI[[1]] <= true_risk_100 & CI[[2]] >= true_risk_100)
+  contains_true_risk_vec_2 <- c(contains_true_risk_vec_2, contains_true_risk)
+  average_diff_2 <- c(average_diff_2, mean(CV[[1]] - true_risk_100))
+  
+  # 4-fold cross validation
+  CV <- cross_validation2(4, 500 + k ** 2)
+  risk <- mean(CV[[2]])
+  risk_vec_4 <- c(risk_vec_4, risk)
+  SE <- standard_error(CV[[1]])
+  standard_errors_vec_4 <- c(standard_errors_vec_4, SE)
+  CI <- confidence_interval(CV[[1]], SE)
+  contains_true_risk <- (CI[[1]] <= true_risk_100 & CI[[2]] >= true_risk_100)
+  contains_true_risk_vec_4 <- c(contains_true_risk_vec_4, contains_true_risk)
+  average_diff_4 <- c(average_diff_4, mean(CV[[1]] - true_risk_100))
+
+  
+  # 10-fold cross validation
+  CV <- cross_validation2(10, 500 + k ** 2)
+  risk <- mean(CV[[2]])
+  risk_vec_10 <- c(risk_vec_10, risk)
+  SE <- standard_error(CV[[1]])
+  standard_errors_vec_10 <- c(standard_errors_vec_10, SE)
+  CI <- confidence_interval(CV[[1]], SE)
+  contains_true_risk <- (CI[[1]] <= true_risk_100 & CI[[2]] >= true_risk_100)
+  contains_true_risk_vec_10 <- c(contains_true_risk_vec_10, contains_true_risk)
+  average_diff_10 <- c(average_diff_10, mean(CV[[1]] - true_risk_100))
+
+ # 10-fold cross validation for 20 different partitions
+  average_log_loss <- rep(0, 100)
+  
+   for (k in 1:20) 
+   {
+     CV <- cross_validation2(10, 500 + k ** 2)
+     log_losses <- CV[[3]]
+     average_log_loss <- average_log_loss + log_losses
+   }
+  average_log_loss <- average_log_loss / 20
+  
+  risk <- mean(average_log_loss)
+  risk_vec_20 <- c(risk_vec_20, risk)
+  SE <- standard_error(average_log_loss)
+  standard_errors_vec_20 <- c(standard_errors_vec_20, SE)
+  CI <- confidence_interval(average_log_loss, SE)
+  contains_true_risk <- (CI[[1]] <= true_risk_100 & CI[[2]] >= true_risk_100)
+  contains_true_risk_vec_20 <- c(contains_true_risk_vec_20, contains_true_risk)
+  average_diff_20 <- c(average_diff_20, mean(average_log_loss - true_risk_100))
+}
+
+
+plt_data_2 <- as.data.frame(average_diff_2)
+#p1 <- ggplot(plt_data_2, aes(x=average_diff_2)) + geom_density() + xlim(-0.5, 1.5)+ ylim(0, 6)
+#p1 + labs(x ="estimation risk - true risk", title = '2-fold')
+plt_data_4 <- as.data.frame(average_diff_4)
+#p2 <- ggplot(plt_data_4, aes(x=average_diff_4)) + geom_density() + xlim(-0.5, 1.5)+ ylim(0, 6)
+#p2 + labs(x ="estimation risk - true risk", title = '4-fold')
+plt_data_10 <- as.data.frame(average_diff_10)
+#p3 <- ggplot(plt_data_10, aes(x=average_diff_10)) + geom_density() + xlim(-0.5, 1.5)+ ylim(0, 6)
+#p3 + labs(x ="estimation risk - true risk", title = '10-fold')
+plt_data_leave_one_out <- as.data.frame(average_diff_leave_one_out)
+#p4 <- ggplot(plt_data_leave_one_out, aes(x=average_diff_leave_one_out)) + geom_density() + xlim(-0.5, 1.5) + ylim(0, 6)
+#p4 + labs(x ="estimation risk - true risk", title = 'leave-one-out')
+plt_data_20 <- as.data.frame(average_diff_20)
+#p5 <- ggplot(plt_data_20, aes(x=average_diff_20)) + geom_density() + xlim(-0.5, 1.5) + ylim(0, 6)
+#p5 + labs(title = '10-fold-20-rep', x ="estimation risk - true risk")
+
+plot_data <- cbind(plt_data_2, plt_data_4, plt_data_10, plt_data_leave_one_out, plt_data_20)
+plot_data <- melt(plot_data, id.vars = NULL)
+levels(plot_data$variable) <- c("2-fold", "4-fold", "10-fold", "leave-one-out", "10-fold-20-rep")
+```
+
+```{r, echo=FALSE, warning = FALSE}
+print("2-fold")
+print(paste0("Mean difference: ", round(mean(average_diff_2), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec_2), 4)))
+print("4-fold")
+print(paste0("Mean difference: ", round(mean(average_diff_4), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec_4), 4)))
+print("10-fold")
+print(paste0("Mean difference: ", round(mean(average_diff_10), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec_10), 4)))
+print("leave-one-out")
+print(paste0("Mean difference: ", round(mean(average_diff_leave_one_out), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec_leave_one_out), 4)))
+print("10-fold-20-rep")
+print(paste0("Mean difference: ", round(mean(average_diff_20), 4)))
+print(paste0("Median standard error: ", round(median(standard_errors_vec_20), 4)))
+```
+```{r fourth, fig.width=5, fig.height=4, echo=FALSE}
+ggplot(plot_data, aes(value)) + geom_density() + facet_wrap(~variable) + xlim(-0.5, 0.2) + labs(x ="estimation risk - true risk")
+```
+
+As we can see, the mean standard error increases with the increase of the folds, which is exactly what we wanted to show. Also, we get an overestimation of a performance of a model, which is unusual. Observing the density of the risk differences, we can observe the mode for all folds is positive, but the average is negative, which tells us we are overestimating the model's performance.

@@ -1,0 +1,19 @@
+Part 1 (Models)
+
+Implement multinomial logistic regression and ordinal logistic regression as described in the lecture notes. For both, implement the (log-)likelihood of the model and an algorithm that fits the model using maximum likelihood estimation and can make predictions for new observations. For optimization you may use any third-party optimization library that allows for box-constraints (for example, fmin_l_bfgs_b from the scipy.optimize library). Optimization with numerical gradients will suffice.
+
+Implement models as classes (MultinomialLogReg, OrdinalLogReg) that provide a method build(X, y), which returns the fitted model as an object, whose predict(X) method returns the predicted target class of given input samples (as in the first homework).
+
+Part 2 (Intermezzo)
+
+Create a data set where ordinal logistic regression performs better than multinomial logistic regression. Describe your data generating process and explain why should ordinal logistic regression perform better. Prepare a train data set (you choose the size) multinomial_bad_ordinal_good_train.csv and test data set (of size 1000) multinomial_bad_ordinal_good_test.csv. Try to be elegant and concise! Use the same formatting as in the given dataset.csv.
+
+Part 3 (Application)
+
+We have a dataset that contains information about 250 students' responses to the question \emph{Overall, how would you rate this course?} for some Master's course (answers are 5-level ordinal ranging from very poor to very good). We are interested in the relationship between this variable and other available information, which includes age, sex, year of study (1st or 2nd) and grades (\% scored on the exam) for the course in question and seven other compulsory courses that the students took during their undergraduate studies. A grade of 50 in the course in question means that the student did not successfully pass the exam.
+
+Fit both models on this dataset. How you prepare the independent variables and if you include the intercept is up to you. Keep in mind that your data preparation will affect interpretation, so do not take it too lightly.
+
+Estimate both models' log-loss using k-fold cross-validation (choice of k is yours). As a baseline for comparison use the naive model that always predicts pi=(.15,.1,.05,.4,.3). Keep in mind that cross-validation estimates of loss, like any estimate, contain uncertainty - include a measure of uncertainty (you should have covered this sufficiently in your preliminary courses).
+
+Interpret the coefficients of the ordinal logistic regression: which independent variables affect the response and how? Is there a practical explanation?

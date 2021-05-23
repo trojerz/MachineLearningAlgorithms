@@ -1,0 +1,33 @@
+For this homework, you will implement classification trees, bagging, and random forests. Your implementations must support numeric input variables and a binary target variable.
+
+You will implement these methods as classes (Tree, Bagging, RandomForest) that provide a method build, which returns the model as an object, whose predict method returns the predicted target class of given input samples (see test_hw2.py for usage examples):
+
+    Tree - a flexible classification tree, with the following attributes: (1) rand, a random generator, for reproducibility, of type random.Random; (2) get_candidate_columns, a function that returns a list of column indices considered for a split (needed for the random forests); and (3) min_samples, the minimum number of samples, where a node is still split.
+
+    Bagging, with attributes: (1) rand, a random generator; (2) tree_builder, an instance of Tree used internally; (3) n: number of bootstrap samples.
+
+    RandomForest, with attributes: (1) rand, a random generator; (2) n: number of bootstrap samples, (3) min_samples, the minimum number of sample where a node is still split.
+
+In the above classes, use the Gini index for selecting the best split.
+
+Apply the developed methods to the housing3.csv data set. Always use the first 80% of data as the training set and the remaining 20% as the testing set. Do the following:
+
+    In function hw_tree_full, build a tree with min_samples=2. Return misclassification rates on training and testing data.
+
+    In function hw_cv_min_samples, find the best value of min_samples with 5-fold cross-validation on training data. Return misclassification rates on training and testing data for a tree with the best value of min_samples. Also, return the best min_samples.
+
+    In function hw_bagging, use bagging with n=50 trees with min_samples=2. Return misclassification rates on training and testing data.
+
+    In function hw_randomforest, use random forests with n=50 trees with min_samples=2. Return misclassification rates on training and testing data.
+
+Your code needs to be Python 3.7 compatible and needs to conform to the unit tests from test_hw_tree.py; see tests for the precise interface. In it, execute any code only under if __name__ == "__main__". Your code can only use the python standard library, numpy, matplotlib (for drawing), pandas (optional, but only for reading). Submit your code in a single file named hw_tree.py.
+
+Submit a report in a single .pdf file. In the report, show the following:
+
+    Misclassification rates from hw_tree_full.
+
+    Misclassification rates from hw_cv_min_samples. Plot misclassification rates versus min_samples from the internal cross-validation.
+
+    Misclassification rates from hw_bagging. Plot misclassification rate versus the number of trees n (also show the influence of different random seeds).
+
+    Misclassification rates from hw_randomforest. Plot misclassification rates versus the number of trees n (also show the influence of different random seeds).

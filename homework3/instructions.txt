@@ -1,0 +1,12 @@
+Implement kernelized ridge regression and two kernels:
+
+    Polynomial kernel κ(x,x′)=(1+xx′)M
+    RBF kernel κ(x,x′)=exp(−||x−x′||22σ2)
+
+Apply kernelized ridge regression and both kernels to the 1-dimensional sine data set. For each kernel, find kernel and regularization parameters that work well, and then plot the input data and the fit (data with dots, fit by a curve). This part aims to showcase what kernels can do and introduce the meaning of parameters. No need to do any formal parameter selection (such as with cross-validation) here.
+
+Apply kernelized ridge regression and both kernels to the housing2r data set. Use the first 80% of data as a training set and the remaining 20% as a validation set. For each kernel, plot RMSE on the testing set versus a kernel parameter value (for polynomial kernel, M ∈ [1,10], for RBF choose interesting values of σ yourself). Plot two curves for each kernel, one with regularization parameter λ=1, and the other with λ set with internal cross-validation (for each kernel parameter value separately).
+
+Submit your code in a single file named hw_kernels.py and a (max) two page report (.pdf) with plots, chosen parameters, and comments. Your code has to be Python 3.7 compatible and must conform to the unit tests from test_hw_kernels.py (also see comments therein for implementation details). Your code can only use the python standard library, numpy and matplotlib libraries. You may also use libraries for reading the data and testing (cross validation, scoring).
+
+A tip from the previous generation: avoid 32-bit floats for happier matrix inverses.
