@@ -1,4 +1,4 @@
-# Author: Ziga Trojer, zt0006@student.uni-lj.si
+# Author: Ziga Trojer, zt0006@student.uni-lj.si, 63200440
 import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 import time
@@ -330,8 +330,8 @@ def get_cross_validation_data(x_data, y_data, k):
     return train_x, train_y, test_x, test_y
 
 def test_with_cv(X_train, y_train, k, name):
-    testing_units = [[], [10], [20, 20], [10, 20, 10], [3, 9, 18, 3]]
-    testing_lambdas = [0.00001, 0.0001, 0.001, 0.1, 1]
+    testing_units = [[]] #, [10], [20, 20], [10, 20, 10], [3, 9, 18, 3]]
+    testing_lambdas = [0.00001] #, 0.0001, 0.001, 0.1, 1]
     train_x, train_y, test_x, test_y = get_cross_validation_data(X_train, y_train, k)
     results = []
     for unit in testing_units:
@@ -350,10 +350,13 @@ def test_with_cv(X_train, y_train, k, name):
                 else:
                     res = log_loss(pred, np.array(W))
                 middle_results.append(res)
+            midd_res = np.array(middle_results)
+            midd_std = np.std(midd_res) / 5 # 5 fold CV
             average_res = (sum(middle_results) / len(middle_results))
-            results.append((unit, lam, average_res))
+            results.append((unit, lam, average_res, midd_std))
             print(f'Those are results: {results[-1]}')
     best_parameters = min(results, key=lambda t: t[2])
+    print(results)
     return best_parameters
 
 def compare_results_for_regression(y_train, y_test, x_train, x_test, unitts, lammba_):
@@ -362,7 +365,8 @@ def compare_results_for_regression(y_train, y_test, x_train, x_test, unitts, lam
     m = fitter.fit(scale_data(x_train), y_train)
     log_reg_fitter = SVR(kernel=RBF(sigma=2), lambda_=1, epsilon=2)
     m2 = log_reg_fitter.fit(scale_data(x_train), y_train)
-    fold_idx, all_idx = split_index(x_test, 5)
+    k = 5
+    fold_idx, all_idx = split_index(x_test, k)
     mse_all_ann, mse_all_svr = list(), list()
     for test_index in fold_idx:
         current_x_test = x_test[test_index]
@@ -375,10 +379,10 @@ def compare_results_for_regression(y_train, y_test, x_train, x_test, unitts, lam
         mse_all_svr.append(mse_current_SVR)
     mse_all_ann = np.array(mse_all_ann)
     mse_all_svr = np.array(mse_all_svr)
-    print(f'Mean square error for ANN with best parameters: {np.mean(mse_all_ann)}, SD {2 * np.std(mse_all_ann)}. '
-          f'95CI: {[max(0, np.mean(mse_all_ann) - 2 * np.std(mse_all_ann)), np.mean(mse_all_ann) + 2 * np.std(mse_all_ann)]}')
-    print(f'Mean square error for SVR with best parameters: {np.mean(mse_all_svr)}, SD {2 * np.std(mse_all_svr)}. '
-          f'95CI: {[max(0, np.mean(mse_all_svr) - 2 * np.std(mse_all_svr)), np.mean(mse_all_svr) + 2 * np.std(mse_all_svr)]}')
+    print(f'Mean square error for ANN with best parameters: {np.mean(mse_all_ann)}, SD {2 * np.std(mse_all_ann) / k}. '
+          f'95CI: {[max(0, np.mean(mse_all_ann) - 2 * np.std(mse_all_ann) / k), np.mean(mse_all_ann) + 2 * np.std(mse_all_ann) / k]}')
+    print(f'Mean square error for SVR with best parameters: {np.mean(mse_all_svr)}, SD {2 * np.std(mse_all_svr) / k}. '
+          f'95CI: {[max(0, np.mean(mse_all_svr) - 2 * np.std(mse_all_svr) / k), np.mean(mse_all_svr) + 2 * np.std(mse_all_svr) / k]}')
 
 def compare_results_for_classification(y_train, y_test, x_train, x_test, unitts, lammba_):
     # we got best parameters with CV
@@ -386,7 +390,8 @@ def compare_results_for_classification(y_train, y_test, x_train, x_test, unitts,
     m = fitter.fit(scale_data(x_train), y_train)
     multinomial_model = MultinomialLogReg()
     multinomial_model_build = multinomial_model.build(scale_data(x_train), y_train)
-    fold_idx, all_idx = split_index(x_test, 5)
+    k = 5
+    fold_idx, all_idx = split_index(x_test, k)
     logloss_all_ann, logloss_all_mr = list(), list()
     for test_index in fold_idx:
         current_x_test = x_test[test_index]
@@ -398,10 +403,10 @@ def compare_results_for_classification(y_train, y_test, x_train, x_test, unitts,
         logloss_all_mr.append(log_loss_m)
     logloss_all_ann = np.array(logloss_all_ann)
     logloss_all_mr = np.array(logloss_all_mr)
-    print(f'Mean square error for ANN with best parameters: {np.mean(logloss_all_ann)}, SD {2 * np.std(logloss_all_ann)}. '
-          f'95CI: {[max(0, np.mean(logloss_all_ann) - 2 * np.std(logloss_all_ann)), np.mean(logloss_all_ann) + 2 * np.std(logloss_all_ann)]}')
-    print(f'Mean square error for SVR with best parameters: {np.mean(logloss_all_mr)}, SD {2 * np.std(logloss_all_mr)}. '
-          f'95CI: {[max(0, np.mean(logloss_all_mr) - 2 * np.std(logloss_all_mr)), np.mean(logloss_all_mr) + 2 * np.std(logloss_all_mr)]}')
+    print(f'Log loss for ANN with best parameters: {np.mean(logloss_all_ann)}, SD {2 * (np.std(logloss_all_ann) / k)}. '
+          f'95CI: {[max(0, np.mean(logloss_all_ann) - 2 * (np.std(logloss_all_ann)) / k), np.mean(logloss_all_ann) + 2 * (np.std(logloss_all_ann) / k)]}')
+    print(f'Log loss for multinomial with best parameters: {np.mean(logloss_all_mr)}, SD {2 * (np.std(logloss_all_mr) / k)}. '
+          f'95CI: {[max(0, np.mean(logloss_all_mr) - 2 * np.std(logloss_all_mr) / k), np.mean(logloss_all_mr) + 2 * np.std(logloss_all_mr) / k]}')
 
 def create_final_predictions():
     train_data = pd.read_csv('train.csv.gz', sep=',')
@@ -419,7 +424,7 @@ def create_final_predictions():
     test_data = test_data.replace({'target': class_map}).values
     y_train, x_train, x_test = (train_data[:, -1]).astype(int), train_data[:, 1:-1], test_data[:, 1:]
     begin_cv = time.time()
-    u, lam, min_log_loss = test_with_cv(x_train, y_train, 5, 'classification')
+    u, lam, min_log_loss, _ = test_with_cv(x_train, y_train, 5, 'classification')
     end_cv = time.time()
     print(f'Minimum log-loss for huge dataset: {min_log_loss}, with parameter: units: {u}, lambda {lam}. Time: {end_cv - begin_cv} seconds')
     # u = [20, 20]
@@ -441,8 +446,8 @@ def create_final_predictions():
     return pred
 
 if __name__ == '__main__':
-    housing_regression = True
-    housing_classification = True
+    housing_regression = False
+    housing_classification = False
     large_dataset = False
     perform_CV = False
     if housing_regression:
@@ -451,7 +456,7 @@ if __name__ == '__main__':
         np.random.shuffle(housing2r)
         y_train, y_test, x_train, x_test = housing2r[:160, 5], housing2r[160:, 5], housing2r[:160, :5], housing2r[160:, :5]
         if perform_CV:
-            u, lam, min_mse = test_with_cv(x_train, y_train, 5, 'regression')
+            u, lam, min_mse, _ = test_with_cv(x_train, y_train, 5, 'regression')
             print(f'Minimum mse: {min_mse}, with parameter: units: {u}, lambda {lam}')
             compare_results_for_regression(y_train, y_test, x_train, x_test, u, lam)
         else:
@@ -466,7 +471,7 @@ if __name__ == '__main__':
         np.random.shuffle(housing3)
         y_train, y_test, x_train, x_test = (housing3[:400, 13]).astype(int), (housing3[400:, 13]).astype(int), housing3[:400, :13], housing3[400:, :13]
         if perform_CV:
-            u, lam, min_log_loss = test_with_cv(x_train, y_train, 5, 'classification')
+            u, lam, min_log_loss, _ = test_with_cv(x_train, y_train, 5, 'classification')
             print(f'Minimum log-loss: {min_log_loss}, with parameter: units: {u}, lambda {lam}')
             compare_results_for_classification(y_train, y_test, x_train, x_test, u, lam)
         else:
